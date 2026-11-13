@@ -1,0 +1,68 @@
+name: ci
+
+# Two questions, asked separately. `unit` asks whether the extensions still turn recorded
+# payloads into valid protocol events, so it gates every change. `agents` runs each
+# extension inside the real CLI against a scripted model (no account, no tokens): pinned
+# versions on every change, and the newest release every night, because the thing that
+# breaks an integration is the agent's next release, not our diff.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npm test
+
+  agents:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        versions: [pinned, latest]
+        exclude:
+          # Latest only on the schedule; a PR is judged against the versions we claim.
+          - versions: ${{ github.event_name == 'schedule' && 'none' || 'latest' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    env:
+      OPENCODE_VERSION: ${{ matrix.versions == 'latest' && 'latest' || '1.19.5' }}
+      OMP_VERSION: ${{ matrix.versions == 'latest' && 'latest' || '18.20.0' }}
+      # A skipped agent would pass vacuously; on a runner that just installed it, fail instead.
+      REQUIRE_AGENTS: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: npm ci
+      - name: Install the real agents
+        shell: bash
+        run: |
+          npm i -g "opencode-ai@$OPENCODE_VERSION"
+          bun install -g "@oh-my-pi/pi-coding-agent@$OMP_VERSION"
+      - name: Versions under test
+        shell: bash
+        run: |
+          opencode --version
+          omp --version
+      - run: npm run e2e
