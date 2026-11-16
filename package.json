@@ -5,7 +5,7 @@
   "description": "Agent extensions that report to Episko over its agent protocol",
   "engines": { "node": ">=24" },
   "scripts": {
-    "test": "node --test \"test/*.test.mjs\"",
+    "test": "node --test \"test/*.test.mjs\" \"agents/*/*.test.mjs\"",
     "e2e": "node --test \"e2e/*.test.mjs\"",
     "schema": "node scripts/sync-schema.mjs"
   },

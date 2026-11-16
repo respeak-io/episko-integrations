@@ -1,11 +1,13 @@
 // The OpenCode plugin replayed against payloads recorded from a real OpenCode 1.19.5 run
-// (test/fixtures, paths anonymised): the same calls, in the same order, OpenCode made.
+// (fixtures/, paths anonymised): the same calls, in the same order, OpenCode made.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { check } from "../protocol/checker.mjs";
-import { load, recordFetch, types } from "./helpers.mjs";
+import { check } from "../../protocol/checker.mjs";
+import { load, recordFetch, types } from "../../test/helpers.mjs";
+
+const EXT = new URL("./episko.ts", import.meta.url);
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8")
   .trim().split("\n").map((l) => JSON.parse(l));
@@ -13,7 +15,7 @@ const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta
 const client = { config: { providers: async () => ({ data: { providers: [{ id: "fake", models: { "fake-model": { limit: { context: 64000 } } } }] } }) } };
 
 async function replay(rows, ctx = { client }) {
-  const mod = await load("../opencode/episko.ts");
+  const mod = await load(EXT);
   assert.deepEqual(Object.keys(mod), ["EpiskoPlugin"], "OpenCode calls every export as a plugin");
   const hooks = await mod.EpiskoPlugin(ctx);
   for (const { kind, data } of rows) {
@@ -139,6 +141,6 @@ test("garbage from OpenCode never comes back as a throw", async () => {
 });
 
 test("without Episko's environment the plugin adds no hooks", async () => {
-  const mod = await load("../opencode/episko.ts", { EPISKO_URL: undefined, EPISKO_TOKEN: undefined });
+  const mod = await load(EXT, { EPISKO_URL: undefined, EPISKO_TOKEN: undefined });
   assert.deepEqual(await mod.EpiskoPlugin({ client }), {});
 });
