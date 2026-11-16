@@ -1,0 +1,13 @@
+{
+  "$schema": "../integration.schema.json",
+  "name": "OpenCode",
+  "homepage": "https://opencode.ai",
+  "bin": "opencode",
+  "package": { "manager": "npm", "name": "opencode-ai" },
+  "testedWith": "1.19.5",
+  "capabilities": ["session-state", "activity", "context", "usage"],
+  "launch": {
+    "extension": "plugins/episko.ts",
+    "env": { "OPENCODE_CONFIG_DIR": "{dir}" }
+  }
+}

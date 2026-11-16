@@ -42,8 +42,6 @@ jobs:
       run:
         shell: bash
     env:
-      OPENCODE_VERSION: ${{ matrix.versions == 'latest' && 'latest' || '1.19.5' }}
-      OMP_VERSION: ${{ matrix.versions == 'latest' && 'latest' || '18.20.0' }}
       # A skipped agent would pass vacuously; on a runner that just installed it, fail instead.
       REQUIRE_AGENTS: "1"
     steps:
@@ -55,14 +53,7 @@ jobs:
         with:
           bun-version: 1.4.4
       - run: npm ci
+      # Every agents/<id>/integration.json: its package at `testedWith`, or at latest.
       - name: Install the real agents
-        shell: bash
-        run: |
-          npm i -g "opencode-ai@$OPENCODE_VERSION"
-          bun install -g "@oh-my-pi/pi-coding-agent@$OMP_VERSION"
-      - name: Versions under test
-        shell: bash
-        run: |
-          opencode --version
-          omp --version
+        run: node scripts/install-agents.mjs ${{ matrix.versions }}
       - run: npm run e2e

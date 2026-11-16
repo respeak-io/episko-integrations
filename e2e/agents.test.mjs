@@ -1,19 +1,21 @@
-// Each integration inside its real agent, launched the way Episko launches it, against a
-// scripted model: no account, no tokens. The agent reads README.md and answers; the test
-// checks what reached "Episko". Skips an agent that is not installed unless REQUIRE_AGENTS=1.
-//   OPENCODE_BIN / OMP_BIN override the binaries found on PATH.
+// Each integration inside its real agent, launched the way Episko launches it (its
+// integration.json), against a scripted model: no account, no tokens. The agent reads
+// README.md and answers; the test checks what reached "Episko". Skips an agent that is not
+// installed unless REQUIRE_AGENTS=1. <ID>_BIN (OPENCODE_BIN, OMP_BIN) overrides PATH.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { check } from "../protocol/checker.mjs";
+import { agents } from "../scripts/agents.mjs";
 import { startEpisko, startFakeModel } from "./harness.mjs";
 
 const REQUIRED = process.env.REQUIRE_AGENTS === "1";
 const ANSWER = "Read it. All done.";
+const PROMPT = "Please read README.md";
 
 function which(name) {
   const exts = process.platform === "win32" ? [".exe", ".cmd", ""] : [""];
@@ -68,80 +70,43 @@ function assertTurn(events) {
   assert.ok(usage.totals.input >= 1200, `totals: ${JSON.stringify(usage.totals)}`);
 }
 
-const opencode = process.env.OPENCODE_BIN ?? which("opencode");
-test("OpenCode reports a turn through the plugin Episko loads", { skip: !opencode && !REQUIRED && "opencode not installed" }, async () => {
-  assert.ok(opencode, "REQUIRE_AGENTS=1 but opencode was not found");
-  const { root, proj } = workspace();
-  const model = await startFakeModel({ answer: ANSWER });
-  const episko = await startEpisko();
-  try {
-    // Episko's launch, verbatim: the plugin in a folder of its own, named by OPENCODE_CONFIG_DIR.
-    const dir = join(root, "ext");
-    mkdirSync(join(dir, "plugins"), { recursive: true });
-    copyFileSync(new URL("../opencode/episko.ts", import.meta.url), join(dir, "plugins", "episko.ts"));
-    const config = {
-      $schema: "https://opencode.ai/config.json", autoupdate: false, share: "disabled", model: "fake/fake-model",
-      provider: { fake: { npm: "@ai-sdk/openai-compatible", name: "Fake", options: { baseURL: model.url, apiKey: "none" },
-        models: { "fake-model": { name: "Fake model", limit: { context: 64000, output: 4096 } } } } },
-    };
-    const xdg = join(root, "xdg");
-    const env = {
-      ...process.env, ...episko.env, PWD: proj, OPENCODE_CONFIG_DIR: dir, OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
-      OPENCODE_DISABLE_AUTOUPDATE: "1", XDG_CONFIG_HOME: join(xdg, "config"), XDG_DATA_HOME: join(xdg, "data"),
-      XDG_STATE_HOME: join(xdg, "state"), XDG_CACHE_HOME: process.env.E2E_CACHE ?? join(xdg, "cache"),
-    };
-    const { code, out } = await run(opencode, ["run", "Please read README.md", "-m", "fake/fake-model"], { cwd: proj, env });
-    await new Promise((r) => setTimeout(r, 300));
-    assert.equal(code, 0, out.slice(-2000));
-    assert.deepEqual(episko.rejected, []);
-    const { errors, events } = check(episko.envelopes);
-    assert.deepEqual(errors, []);
-    assertTurn(events);
-    assert.equal(events.findLast((e) => e.type === "usage").contextWindow, 64000);
-  } finally {
-    model.close();
-    episko.close();
-    rmSync(root, { recursive: true, force: true });
-  }
-});
+// What protocol.rs does at launch: the extension at its path in a folder of its own, and
+// {file}/{dir} filled into the args and env the integration declares.
+function episkoLaunch(dir, launch, folder) {
+  const file = join(folder, ...launch.extension.split("/"));
+  mkdirSync(dirname(file), { recursive: true });
+  copyFileSync(new URL("episko.ts", dir), file);
+  const fill = (v) => v.replaceAll("{file}", file).replaceAll("{dir}", folder);
+  return {
+    args: (launch.args ?? []).map(fill),
+    env: Object.fromEntries(Object.entries(launch.env ?? {}).map(([k, v]) => [k, fill(v)])),
+  };
+}
 
-const omp = process.env.OMP_BIN ?? which("omp");
-test("OMP reports a turn through the extension Episko loads", { skip: !omp && !REQUIRED && "omp not installed" }, async () => {
-  assert.ok(omp, "REQUIRE_AGENTS=1 but omp was not found");
-  const { root, proj } = workspace();
-  const model = await startFakeModel({ answer: ANSWER });
-  const episko = await startEpisko();
-  try {
-    const dir = join(root, "ext");
-    mkdirSync(dir);
-    const file = join(dir, "episko.ts");
-    copyFileSync(new URL("../omp/episko.ts", import.meta.url), file);
-    const agentDir = join(root, "agent");
-    mkdirSync(agentDir);
-    writeFileSync(join(agentDir, "models.yml"), [
-      "providers:",
-      "  fake:",
-      `    baseUrl: ${model.url}`,
-      "    api: openai-completions",
-      "    apiKey: none",
-      "    models:",
-      "      - id: fake-model",
-      "        name: Fake model",
-      "        contextWindow: 64000",
-      "        maxTokens: 4096",
-      "",
-    ].join("\n"));
-    const env = { ...process.env, ...episko.env, PWD: proj, PI_CODING_AGENT_DIR: agentDir };
-    const { code, out } = await run(omp, ["-p", "Please read README.md", "--model", "fake/fake-model", "--extension", file], { cwd: proj, env });
-    await new Promise((r) => setTimeout(r, 300));
-    assert.equal(code, 0, out.slice(-2000));
-    assert.deepEqual(episko.rejected, []);
-    const { errors, events } = check(episko.envelopes);
-    assert.deepEqual(errors, []);
-    assertTurn(events);
-  } finally {
-    model.close();
-    episko.close();
-    rmSync(root, { recursive: true, force: true });
-  }
-});
+for (const { id, dir, spec } of agents()) {
+  const bin = process.env[`${id.toUpperCase().replaceAll("-", "_")}_BIN`] ?? which(spec.bin);
+  test(`${spec.name} reports a turn through the extension Episko loads`, { skip: !bin && !REQUIRED && `${spec.bin} not installed` }, async () => {
+    assert.ok(bin, `REQUIRE_AGENTS=1 but ${spec.bin} was not found`);
+    const { setup } = await import(new URL("e2e.mjs", dir).href);
+    const { root, proj } = workspace();
+    const model = await startFakeModel({ answer: ANSWER });
+    const episko = await startEpisko();
+    try {
+      const launch = episkoLaunch(dir, spec.launch, join(root, "ext"));
+      const agent = await setup({ root, proj, model, prompt: PROMPT });
+      const env = { ...process.env, ...agent.env, ...launch.env, ...episko.env, PWD: proj };
+      const { code, out } = await run(bin, [...agent.args, ...launch.args], { cwd: proj, env });
+      await new Promise((r) => setTimeout(r, 300));
+      assert.equal(code, 0, out.slice(-2000));
+      assert.deepEqual(episko.rejected, []);
+      const { errors, events } = check(episko.envelopes);
+      assert.deepEqual(errors, []);
+      assertTurn(events);
+      agent.check?.(events);
+    } finally {
+      model.close();
+      episko.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+}

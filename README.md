@@ -8,12 +8,37 @@ Claude Code and Codex.
 
 | Agent | Extension | Loaded by Episko as | Status |
 | --- | --- | --- | --- |
-| [OMP (oh-my-pi)](https://github.com/can1357/oh-my-pi) | [`omp/episko.ts`](omp/episko.ts) | `omp --extension <file>` | observe-only |
-| [OpenCode](https://opencode.ai) | [`opencode/episko.ts`](opencode/episko.ts) | `OPENCODE_CONFIG_DIR=<dir>` with `plugins/episko.ts` | observe-only |
+| [OMP (oh-my-pi)](https://github.com/can1357/oh-my-pi) | [`agents/omp/`](agents/omp) | `omp --extension <file>` | observe-only |
+| [OpenCode](https://opencode.ai) | [`agents/opencode/`](agents/opencode) | `OPENCODE_CONFIG_DIR=<dir>` with `plugins/episko.ts` | observe-only |
 
 Nothing to install: Episko ships these files and loads them for each launch. Outside
 Episko they do nothing, because they only act when Episko's `EPISKO_URL` and `EPISKO_TOKEN`
 are in their environment.
+
+## Layout
+
+One folder per agent, so adding one never touches the rest:
+
+```text
+agents/<id>/
+  integration.json   name, how CI installs it, the version it is tested with, what it
+                     reports, and how Episko loads it (agents/integration.schema.json)
+  episko.ts          the extension
+  <id>.test.mjs      recorded payloads replayed through it
+  e2e.mjs            how the e2e run points this agent at the scripted model
+  fixtures/          the recordings
+```
+
+`protocol/` holds the schema copy and the checker, `test/` the cross-agent rules, `e2e/` the
+runner and its two fake servers, `scripts/agents.mjs` the one list everything iterates.
+
+## How Episko picks a change up
+
+Episko never builds from this repository at runtime. Once a day a workflow in Episko
+copies `main` (each `episko.ts` and the Episko-facing half of each `integration.json`) and
+opens a pull request there if anything changed; it refuses a commit whose CI here did not
+pass. So `main` only takes changes through a pull request with green checks, and what
+merges here reaches users with Episko's next release, after someone merged that PR.
 
 ## The protocol
 
@@ -42,8 +67,9 @@ npm run e2e    # runs each extension inside the real CLI, if installed
 loopback, then has the agent read `README.md` and answer. No account and no tokens are
 involved. `protocol/checker.mjs` validates every POST against the schema and checks the
 rules a schema cannot express: tool calls pair up, turns don't nest, totals only grow.
-Set `OPENCODE_BIN` or `OMP_BIN` to test a specific binary. CI runs the pinned versions
-on every change and the newest releases every night.
+Set `<ID>_BIN` (`OPENCODE_BIN`, `OMP_BIN`) to test a specific binary. CI installs each
+agent at its `testedWith` on every change and at its newest release every night
+(`scripts/install-agents.mjs`).
 
 ## Adding an agent
 
@@ -52,12 +78,13 @@ An agent qualifies when it has a public, per-launch way to load code into its ow
 An integration is accepted here when CI can run the real CLI against the scripted model;
 otherwise nobody would notice when the agent's next release breaks it.
 
-1. Add `<agent>/episko.ts`. Copy the client block from an existing extension unchanged
-   (`test/client.test.mjs` checks the copies match).
-2. Record a real run (see `test/fixtures`), anonymise the paths, and replay it in
-   `test/<agent>.test.mjs`.
-3. Add the agent to `e2e/agents.test.mjs` and to the CI matrix.
-4. In Episko, add a manifest row with a `protocol` block and vendor the file
+1. Add `agents/<id>/` with the four files above. `<id>` is the id Episko files the agent
+   under, so it must match the agent's row in Episko's catalogue. Copy the client block
+   from an existing extension unchanged (`test/client.test.mjs` checks the copies match).
+2. Record a real run, anonymise the paths, and replay it in `<id>.test.mjs`.
+3. Claim only the capabilities the extension sends; `npm test` checks `integration.json`
+   against the schema, and CI installs and runs the agent from it with no other change.
+4. Once it is on `main`, Episko's next vendoring pull request carries it
    (`docs/agent-protocol.md` § Adding an agent).
 
 ## Credits

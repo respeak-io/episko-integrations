@@ -1,11 +1,13 @@
 // The OMP extension driven through a stand-in for OMP's ExtensionAPI. Event names and
-// payload shapes follow OMP's docs/extensions.md and hooks.md; e2e/omp.test.mjs runs the
+// payload shapes follow OMP's docs/extensions.md and hooks.md; e2e/agents.test.mjs runs the
 // real CLI where one is installed.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { check } from "../protocol/checker.mjs";
-import { ENV, load, recordFetch, types } from "./helpers.mjs";
+import { check } from "../../protocol/checker.mjs";
+import { ENV, load, recordFetch, types } from "../../test/helpers.mjs";
+
+const EXT = new URL("./episko.ts", import.meta.url);
 
 function fakePi() {
   const handlers = new Map();
@@ -45,7 +47,7 @@ async function oneTurn(pi, c = ctx()) {
 test("a turn arrives in order, valid, and attributed to the pane's token", async () => {
   const net = recordFetch();
   try {
-    const { default: episko } = await load("../omp/episko.ts");
+    const { default: episko } = await load(EXT);
     const pi = fakePi();
     episko(pi);
     await oneTurn(pi);
@@ -75,7 +77,7 @@ test("a turn arrives in order, valid, and attributed to the pane's token", async
 test("a subagent's turn is not the pane's", async () => {
   const net = recordFetch();
   try {
-    const { default: episko } = await load("../omp/episko.ts");
+    const { default: episko } = await load(EXT);
     const pi = fakePi();
     episko(pi);
     await oneTurn(pi, ctx({ agent: { kind: "sub", id: "explore", name: "explore", depth: 1 } }));
@@ -89,7 +91,7 @@ test("a subagent's turn is not the pane's", async () => {
 test("a continuation stays inside the turn it continues", async () => {
   const net = recordFetch();
   try {
-    const { default: episko } = await load("../omp/episko.ts");
+    const { default: episko } = await load(EXT);
     const pi = fakePi();
     episko(pi);
     const c = ctx();
@@ -108,7 +110,7 @@ test("a continuation stays inside the turn it continues", async () => {
 test("a failed model call ends the turn as failed, with OMP's reason", async () => {
   const net = recordFetch();
   try {
-    const { default: episko } = await load("../omp/episko.ts");
+    const { default: episko } = await load(EXT);
     const pi = fakePi();
     episko(pi);
     const c = ctx();
@@ -126,7 +128,7 @@ test("a failed model call ends the turn as failed, with OMP's reason", async () 
 test("switching OMP sessions restarts the totals, as the protocol asks", async () => {
   const net = recordFetch();
   try {
-    const { default: episko } = await load("../omp/episko.ts");
+    const { default: episko } = await load(EXT);
     const pi = fakePi();
     episko(pi);
     let id = "sess-1";
@@ -149,7 +151,7 @@ test("switching OMP sessions restarts the totals, as the protocol asks", async (
 test("a todo result becomes the plan", async () => {
   const net = recordFetch();
   try {
-    const { default: episko } = await load("../omp/episko.ts");
+    const { default: episko } = await load(EXT);
     const pi = fakePi();
     episko(pi);
     const c = ctx();
@@ -170,7 +172,7 @@ test("a todo result becomes the plan", async () => {
 test("a hostile payload never reaches OMP as a throw, and never blocks a tool", async () => {
   const net = recordFetch();
   try {
-    const { default: episko } = await load("../omp/episko.ts");
+    const { default: episko } = await load(EXT);
     const pi = fakePi();
     episko(pi);
     const cyclic = {}; cyclic.self = cyclic;
@@ -188,14 +190,14 @@ test("a hostile payload never reaches OMP as a throw, and never blocks a tool", 
 });
 
 test("without Episko's environment it registers nothing", async () => {
-  const { default: episko } = await load("../omp/episko.ts", { EPISKO_URL: undefined, EPISKO_TOKEN: undefined });
+  const { default: episko } = await load(EXT, { EPISKO_URL: undefined, EPISKO_TOKEN: undefined });
   const pi = fakePi();
   episko(pi);
   assert.equal(pi.handlers.size, 0);
 });
 
 test("a URL that is not this machine's loopback is never posted to", async () => {
-  const { default: episko } = await load("../omp/episko.ts", { EPISKO_URL: "https://example.com/agent", EPISKO_TOKEN: "x" });
+  const { default: episko } = await load(EXT, { EPISKO_URL: "https://example.com/agent", EPISKO_TOKEN: "x" });
   const pi = fakePi();
   episko(pi);
   assert.equal(pi.handlers.size, 0);

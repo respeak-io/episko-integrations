@@ -21,13 +21,13 @@ export function recordFetch() {
 }
 
 /** A fresh copy of the module per call: its queue and `ENABLED` are module state. */
-export async function load(path, env = ENV) {
+export async function load(url, env = ENV) {
   const saved = { EPISKO_URL: process.env.EPISKO_URL, EPISKO_TOKEN: process.env.EPISKO_TOKEN };
   for (const [k, v] of Object.entries(env)) {
     if (v === undefined) delete process.env[k]; else process.env[k] = v;
   }
   try {
-    return await import(`${new URL(path, import.meta.url).href}?n=${Math.random()}`);
+    return await import(`${url.href}?n=${Math.random()}`);
   } finally {
     for (const [k, v] of Object.entries(saved)) {
       if (v === undefined) delete process.env[k]; else process.env[k] = v;
